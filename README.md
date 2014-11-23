@@ -20,3 +20,7 @@ you can activate you RPi via the web browser by putting this in the url
 http://192.168.0.249:8088/go
 
 http://192.168.0.249:8088/upload
+
+to see it working have a look at my attempt for a video clip :
+have a look:
+https://www.dropbox.com/s/qiu7puyqsovif6m/Video%2023-11-14%2015%2028%2034.mov?dl=0
