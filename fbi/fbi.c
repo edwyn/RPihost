@@ -75,6 +75,7 @@
 #define KEY_DESC      -13
 #define KEY_B         -14
 #define KEY_R         -15 /* replay key */
+#define KEY_C         -16 /* blank key image */
 
 /* with arg */
 #define KEY_GOTO     -100
@@ -125,11 +126,13 @@ struct flist {
     struct ida_image  *fimg;
     struct ida_image  *simg;
     struct list_head  lru;
+    int               timeout;
 };
 static LIST_HEAD(flist);
 static LIST_HEAD(flru);
 static int           fcount;
-static struct flist  *fcurrent;
+static struct flist  *fcurrent; /* main current image used for looping */
+static struct flist  *fmain_list;
 static struct ida_image *img;
 
 /* accounting */
@@ -162,6 +165,15 @@ int perfmon = 0;
 /* font handling */
 static char *fontname = NULL;
 static FT_Face face;
+
+
+
+
+/*global blank picture */
+struct flist *blank;
+
+
+
 
 /* ---------------------------------------------------------------------- */
 /* fwd declarations                                                       */
@@ -220,6 +232,33 @@ static int flist_add(char *filename)
     f = malloc(sizeof(*f));
     memset(f,0,sizeof(*f));
     f->name = strdup(filename);
+    list_add_tail(&f->list,&flist);
+    INIT_LIST_HEAD(&f->lru);
+    return 0;
+}
+
+static int blank_add(char *filename)
+{
+    blank = malloc(sizeof(*blank));
+    memset(blank,0,sizeof(*blank));
+    blank->name = strdup(filename);
+    return 0;
+}
+
+static struct flist* get_blank(void)
+{
+    return blank;
+}
+
+
+static int flist_timeout_add(char *filename, int timeout)
+{
+    struct flist *f;
+
+    f = malloc(sizeof(*f));
+    memset(f,0,sizeof(*f));
+    f->name = strdup(filename);
+    f->timeout = timeout;
     list_add_tail(&f->list,&flist);
     INIT_LIST_HEAD(&f->lru);
     return 0;
@@ -656,18 +695,29 @@ read_image(char *filename)
     struct ida_image *img;
     struct list_head *item;
     char blk[512];
-    FILE *fp;
+    FILE *fp, *logfp;
     unsigned int y;
     void *data;
     
     /* open file */
-    if (NULL == (fp = fopen(filename, "r"))) {
+    /* open file */
+    if (NULL == (fp = fopen(filename, "r"))) 
+    {
 	fprintf(stderr,"open %s: %s\n",filename,strerror(errno));
 	return NULL;
     }
     memset(blk,0,sizeof(blk));
     fread(blk,1,sizeof(blk),fp);
     rewind(fp);
+
+    char slice1[44] = "/home/pi/fbi/fbi-2.07/read_image.txt";
+    if (NULL == (logfp = fopen(slice1, "w"))) {
+        //fprintf(stderr,"open %s: %s\n",filename,strerror(errno));
+        return NULL;
+    }
+
+    fprintf(logfp, "testing write file\n");
+
 
     /* pick loader */
     list_for_each(item,&loaders) {
@@ -678,6 +728,7 @@ read_image(char *filename)
 	    break;
 	loader = NULL;
     }
+
     if (NULL == loader) {
 	/* no loader found, try to use ImageMagick's convert */
 	int p[2];
@@ -708,6 +759,7 @@ read_image(char *filename)
     /* load image */
     img = malloc(sizeof(*img));
     memset(img,0,sizeof(*img));
+    fprintf(logfp, "loader->init loders is %s\n", loader->name);
     data = loader->init(fp,filename,0,&img->i,0);
     if (NULL == data) {
 	fprintf(stderr,"loading %s [%s] FAILED\n",filename,loader->name);
@@ -722,6 +774,7 @@ read_image(char *filename)
 	loader->read(img->data + img->i.width * 3 * y, y, data);
     }
     loader->done(data);
+    fclose(logfp);
     return img;
 }
 
@@ -923,6 +976,12 @@ svga_show(struct flist *f, struct flist *prev,
         activity = select( max_sd + 1 , &readfds , NULL , NULL , 
                                            ( 0 != timeout) ? &limit : NULL);
 
+        if(activity == 0)
+        {
+            return KEY_TIMEOUT;
+        }
+
+
         if (FD_ISSET(master_socket, &readfds)) 
         {
             isMasterSocket=1;
@@ -975,14 +1034,14 @@ svga_show(struct flist *f, struct flist *prev,
                         socket_key = KEY_B;
                     if(*buffer == 'r')
                         socket_key = KEY_R;
+                    if(*buffer == 'n')
+                        socket_key = KEY_PGDN;
+                    if(*buffer == 'c')
+                        socket_key = KEY_C;
                     //send(sd , buffer , strlen(buffer) , 0 );
                 }
             }
 
-        }
-        if(activity == 0)
-        {
-            return KEY_TIMEOUT;
         }
         //if the message doesn't come from the mastersocket but from the client
         //return with key press
@@ -1285,6 +1344,7 @@ static void flist_img_load(struct flist *f, int prefetch)
 {
     char linebuffer[128];
     float scale = 1;
+    FILE *fp;
 
     if (f->fimg) {
 	/* touch */
@@ -1296,6 +1356,7 @@ static void flist_img_load(struct flist *f, int prefetch)
     snprintf(linebuffer,sizeof(linebuffer),"%s %s ...",
 	     prefetch ? "prefetch" : "loading", f->name);
     status_update(linebuffer, NULL);
+    //fprintf(stderr,"timeout test is :\n");
     f->fimg = read_image(f->name);
     if (!f->fimg) {
 	snprintf(linebuffer,sizeof(linebuffer),
@@ -1337,6 +1398,60 @@ static void flist_img_load(struct flist *f, int prefetch)
     img_cnt++;
 }
 
+static void load_files_delays()
+{
+    FILE *fp;
+    FILE *pngfp;
+    char str[60];
+    char **delaynumbers;
+    char **pngfiles;
+    int variableNumberOfElements=0;
+    int i =0;
+    int delayvalue;
+    char ch;
+
+    fp = fopen("/home/pi/fbi/fbi-2.07/print/delays.txt" , "r");
+    while(!feof(fp))
+    {
+        ch = fgetc(fp);
+        if(ch == '\n')
+        {
+            variableNumberOfElements++;
+        }
+    }
+
+
+    fclose(fp);
+
+    delaynumbers = malloc(variableNumberOfElements * sizeof(char*));
+    pngfiles     = malloc(variableNumberOfElements * sizeof(char*));
+    for (i=0; i < variableNumberOfElements; i++)
+    {
+        delaynumbers[i] = malloc((60+1) * sizeof(char));
+        pngfiles[i]      = malloc((60+1) * sizeof(char));
+    }
+
+    fp    = fopen("/home/pi/fbi/fbi-2.07/print/delays.txt" , "r");
+    pngfp = fopen("/home/pi/fbi/fbi-2.07/print/pngfiles.txt" , "r");
+    if(fp == NULL || pngfp == NULL) 
+    {
+       perror("Error opening file");
+    //   return(-1);
+    }
+    for(i=0;i<variableNumberOfElements;i++)
+    {
+        fgets(delaynumbers[i],60,fp);
+        delayvalue = atoi(delaynumbers[i]);
+        fgets(pngfiles[i],60,pngfp);
+        //fprintf(stderr,"delay value found %d\n", delayvalue);
+        //fprintf(stderr,"png value found %s\n", pngfiles[i]);
+        flist_timeout_add(pngfiles[i], delayvalue);
+    }
+    fclose(fp);
+    fclose(pngfp);
+
+}
+
 /* ---------------------------------------------------------------------- */
 
 static void cleanup_and_exit(int code)
@@ -1366,6 +1481,8 @@ main(int argc, char *argv[])
 
     //set of socket descriptors
     //fd_set readfds;
+    //loading some files
+    //load_files_delays();
 
 
    //initialise all client_socket[] to 0 so not checked
@@ -1468,7 +1585,10 @@ main(int argc, char *argv[])
     if (filelist)
 	flist_add_list(filelist);
     for (i = optind; i < argc; i++)
+    {
 	flist_add(argv[i]);
+        blank_add(argv[i]);
+    }
     flist_renumber();
 
     if (0 == fcount) {
@@ -1478,7 +1598,8 @@ main(int argc, char *argv[])
 
     if (GET_RANDOM())
 	flist_randomize();
-    fcurrent = flist_first();
+    //fcurrent = flist_first();
+    fcurrent = get_blank();
 
     font_init();
     if (NULL == fontname)
@@ -1488,6 +1609,9 @@ main(int argc, char *argv[])
 	fprintf(stderr,"can't open font: %s\n",fontname);
 	exit(1);
     }
+    //fprintf(stderr,"device %s\n", cfg_get_str(O_DEVICE));
+    //fprintf(stderr, "video mode %s\n", cfg_get_str(O_VIDEO_MODE));
+    //fprintf(stderr, "VT %s\n", GET_VT());
     fd = fb_init(cfg_get_str(O_DEVICE),
 		 cfg_get_str(O_VIDEO_MODE),
 		 GET_VT());
@@ -1569,10 +1693,13 @@ main(int argc, char *argv[])
 	    cleanup_and_exit(0);
 	    break;
 	case KEY_PGDN:
-	    fcurrent = flist_next(fcurrent,0,1);
+	    //fcurrent = flist_next(fcurrent,0,1);
+            fmain_list = flist_next(fmain_list,0,1);
+            fcurrent = fmain_list;
 	    break;
 	case KEY_PGUP:
-	    fcurrent = flist_prev(fcurrent,1);
+	    //fcurrent = flist_prev(fcurrent,1);
+            fcurrent = flist_prev(fmain_list,1);
 	    break;
 	case KEY_TIMEOUT:
 	    fcurrent = flist_next(fcurrent,once,1);
@@ -1641,14 +1768,20 @@ main(int argc, char *argv[])
             flist_add(slice2);
             flist_add(slice3);
             flist_renumber();
+            fmain_list = flist_first();
             //fcurrent = flist_first();
-            timeout=2;
+            //timeout=2;
             break;
            } 
         case KEY_R:
            {
-            fcurrent = flist_first();
-            timeout=2;
+            //fcurrent = flist_first();
+            fmain_list = flist_first();
+            //timeout=2;
+           }
+        case KEY_C:
+           {
+            fcurrent = get_blank();
            }
 	}
     }
