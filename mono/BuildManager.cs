@@ -25,7 +25,7 @@ namespace RasPiHost
         private bool     m_running; // a var to control thread life
         private DateTime m_printstarttime;
 
-        //private FBController m_fbcontroller = null;
+        private FBController m_fbcontroller = null;
         private bool m_printing = false;
         private bool m_paused = false;
         private DateTime m_buildstarttime;
@@ -40,7 +40,7 @@ namespace RasPiHost
 
         public BuildManager()
         {
-            //m_fbcontroller = new FBController();
+            m_fbcontroller = new FBController();
         }
 
         public void Setup()
@@ -116,7 +116,10 @@ namespace RasPiHost
             proc.WaitForExit();
         }
 
-
+        /// <summary>
+        /// PreparePrint function unpacks the received CW file and parses the gcode 
+        /// </summary>
+        /// <param name="zipFilePath"></param>
         public void PreparePrint(string zipFilePath)
         {
             m_OutputFolder = "/home/pi/python/raspihost/output";
@@ -162,8 +165,8 @@ namespace RasPiHost
                        select s;
             File.WriteAllLines(m_OutputFolder + "/png.txt", sort);
 
-            //.fbcontroller.connect(8888)
-            //self.fbcontroller.send('b')
+            m_fbcontroller.Connect();
+            m_fbcontroller.Send("b");
 
 
 
@@ -298,12 +301,13 @@ namespace RasPiHost
                                     {
                                         //send blank screen
                                         Console.WriteLine("Show Blank screen \n");
+                                        m_fbcontroller.Send("c");
                                     }
                                     else
                                     {
                                         //send next picture and red next line
                                         Console.WriteLine("Show Slice screen \n");
-
+                                        m_fbcontroller.Send("n");
                                     }
                                 }
                             }
