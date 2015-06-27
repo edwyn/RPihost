@@ -1,2 +1,5 @@
 mcs -out:RasPiHost.exe BuildManager.cs RasPiHost.cs
 mcs -out:RasPiHost.exe BuildManager.cs RasPiHost.cs FBControllers.cs
+
+fbset -g 1200 800 1200 800 16
+ /usr/share/nginx/www 
