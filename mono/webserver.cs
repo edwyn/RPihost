@@ -12,29 +12,35 @@ class Program
 {
     static void Main()
     {
-       HttpListener listener = new HttpListener();
+        
+        HttpListener listener = new HttpListener();
        listener.Prefixes.Add("http://*:8088/");
        listener.Start();
        Console.WriteLine("Listening...");
        for(;;)
        {
           HttpListenerContext ctx = listener.GetContext();
-          new Thread(new Worker(ctx).ProcessRequest).Start();
+          BuildManager bManager = new BuildManager();
+          new Thread(new Worker(ctx, bManager).ProcessRequest).Start();
        }
     }
  
     class Worker
     {
       private HttpListenerContext context;
- 
-       public Worker(HttpListenerContext context)
+      private BuildManager bManager;
+
+       public Worker(HttpListenerContext context, BuildManager _bManager)
        {
           this.context = context;
+          this.bManager = _bManager;
        }
  
        public void ProcessRequest()
        {
           string msg = context.Request.HttpMethod + " " + context.Request.Url;
+          string filename = "";
+
           Console.WriteLine(msg);
           switch (context.Request.HttpMethod)
           {
@@ -42,7 +48,8 @@ class Program
                   do_get();
                   break;
               case "POST":
-                  SaveFile(context.Request.ContentEncoding, GetBoundary(context.Request.ContentType), context.Request.InputStream);
+                  filename = SaveFile(context.Request.ContentEncoding, GetBoundary(context.Request.ContentType), context.Request.InputStream);
+                  bManager.PreparePrint(filename);
                   Console.WriteLine(context.Request.Url);
                   context.Response.StatusCode = 200;
                   context.Response.ContentType = "text/html";
