@@ -42,6 +42,7 @@ class Program
                   break;
               case "POST":
                   SaveFile(context.Request.ContentEncoding, GetBoundary(context.Request.ContentType), context.Request.InputStream);
+                  Console.WriteLine(context.Request.Url);
                   context.Response.StatusCode = 200;
                   context.Response.ContentType = "text/html";
                   using (StreamWriter writer = new StreamWriter(context.Response.OutputStream, Encoding.UTF8))
@@ -69,16 +70,25 @@ class Program
           return "--" + ctype.Split(';')[1].Split('=')[1];
        }
 
+       private static String GetFileName(String ctype)
+       {
+          return ctype.Split(';')[2].Split('=')[1];
+       }
+
        private static void SaveFile(Encoding enc, String boundary, Stream input)
        {
            Byte[] boundaryBytes = enc.GetBytes(boundary);
            Int32 boundaryLen = boundaryBytes.Length;
 
-           using (FileStream output = new FileStream("/home/pi/mono/data", FileMode.Create, FileAccess.Write))
-           {
+           //using (FileStream output = new FileStream("/home/pi/mono/data", FileMode.Create, FileAccess.Write))
+           //{
                Byte[] buffer = new Byte[1024];
+               Byte[] buffer2 = new Byte[1024];
+               string Disposition;
                Int32 len = input.Read(buffer, 0, 1024);
                Int32 startPos = -1;
+               Int32 preStartPos = 0;
+               string filename = "";
 
                // Find start boundary
                while (true)
@@ -109,8 +119,19 @@ class Program
                        {
                            throw new Exception("Preamble not Found.");
                        }
-
+                       
+                       preStartPos = startPos;
                        startPos = Array.IndexOf(buffer, enc.GetBytes("\n")[0], startPos);
+                       Array.Copy(buffer, preStartPos, buffer2, 0, startPos-preStartPos);
+                       Disposition = System.Text.Encoding.UTF8.GetString(buffer2);
+                       if(Disposition.Contains("Disposition"))
+                       {
+                           //Console.WriteLine("found dispostion " + Disposition);
+                           filename = GetFileName(Disposition);
+                           filename = filename.Split('"')[1];
+                           Console.WriteLine("Found filename " + filename);
+                       }
+
                        if (startPos >= 0)
                        {
                            startPos++;
@@ -125,6 +146,9 @@ class Program
 
                Array.Copy(buffer, startPos, buffer, 0, len - startPos);
                len = len - startPos;
+
+           using (FileStream output = new FileStream("/home/pi/mono/" + filename, FileMode.Create, FileAccess.Write))
+           {
 
                while (true)
                {
