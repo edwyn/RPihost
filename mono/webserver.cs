@@ -6,7 +6,8 @@ using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Threading;
- 
+using RasPiHost;
+
 class Program
 {
     static void Main()
@@ -75,7 +76,7 @@ class Program
           return ctype.Split(';')[2].Split('=')[1];
        }
 
-       private static void SaveFile(Encoding enc, String boundary, Stream input)
+       private static string SaveFile(Encoding enc, String boundary, Stream input)
        {
            Byte[] boundaryBytes = enc.GetBytes(boundary);
            Int32 boundaryLen = boundaryBytes.Length;
@@ -89,9 +90,10 @@ class Program
                Int32 startPos = -1;
                Int32 preStartPos = 0;
                string filename = "";
+               string path = "/home/pi/mono/model";
 
                // Find start boundary
-               while (true)
+            while (true)
                {
                    if (len == 0)
                    {
@@ -147,7 +149,7 @@ class Program
                Array.Copy(buffer, startPos, buffer, 0, len - startPos);
                len = len - startPos;
 
-           using (FileStream output = new FileStream("/home/pi/mono/" + filename, FileMode.Create, FileAccess.Write))
+           using (FileStream output = new FileStream(path + filename, FileMode.Create, FileAccess.Write))
            {
 
                while (true)
@@ -170,6 +172,7 @@ class Program
                    }
                }
            }
+           return path + filename;
        }
 
     private static Int32 IndexOf(Byte[] buffer, Int32 len, Byte[] boundaryBytes)
